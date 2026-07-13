@@ -78,6 +78,14 @@ class RunLogger:
     def info(self, msg: str) -> None:
         self.logger.info(msg)
 
+    def update_wandb_config(self, updates: Dict[str, Any]) -> None:
+        """Merge additional key/values into the WandB run config (safe if wandb disabled)."""
+        if self.use_wandb:
+            try:
+                wandb.config.update(_to_plain(updates), allow_val_change=True)
+            except Exception as e:  # noqa: BLE001
+                self.logger.warning(f"wandb.config.update failed: {e}")
+
     def log_scalars(self, scalars: Dict[str, float], step: int, prefix: str = "") -> None:
         for k, v in scalars.items():
             tag = f"{prefix}/{k}" if prefix else k

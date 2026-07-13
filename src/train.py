@@ -76,8 +76,8 @@ def train(cfg: AttrDict) -> None:
         max_length=int(cfg.train.max_length),
         num_workers=int(cfg.train.num_workers),
     )
-    runlog.info("Loader sizes: " +
-                ", ".join(f"{k}={len(v.dataset)}" for k, v in loaders.items()))
+    split_sizes = {k: len(v.dataset) for k, v in loaders.items()}
+    runlog.info("Loader sizes: " + ", ".join(f"{k}={n}" for k, n in split_sizes.items()))
 
     # Model
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -86,6 +86,44 @@ def train(cfg: AttrDict) -> None:
     n_all = sum(p.numel() for p in model.parameters())
     runlog.info(f"Trainable params: {n_train/1e6:.2f}M / {n_all/1e9:.2f}B  "
                 f"({100*n_train/n_all:.2f}%)  device: {device}")
+
+    # ---- Push run-level summary into WandB config (dataset split + params) ----
+    gpu_name = torch.cuda.get_device_name(0) if torch.cuda.is_available() else "cpu"
+    effective_bs = int(cfg.train.batch_size) * max(1, int(cfg.train.grad_accum))
+    runlog.update_wandb_config({
+        "dataset/train_size": split_sizes.get("train", 0),
+        "dataset/val_size":   split_sizes.get("val", 0),
+        "dataset/test_size":  split_sizes.get("test", 0),
+        "params/trainable":   n_train,
+        "params/total":       n_all,
+        "params/trainable_pct": 100.0 * n_train / n_all,
+        "params/effective_batch": effective_bs,
+        "hardware/gpu": gpu_name,
+        "hardware/gpu_count": torch.cuda.device_count(),
+    })
+
+    # ---- Console + log-file summary block (mirrors merits-l-text style) ----
+    runlog.info("=" * 70)
+    runlog.info(f"Model:        {cfg.model.model_id}")
+    runlog.info(f"LoRA:         r={cfg.model.get('lora_r', 16)}  "
+                f"alpha={cfg.model.get('lora_alpha', 32)}  "
+                f"dropout={cfg.model.get('lora_dropout', 0.1)}  "
+                f"targets={list(cfg.model.get('target_modules', ['q_proj','v_proj']))}")
+    runlog.info(f"Pool:         {cfg.model.get('pool', 'mean')}")
+    runlog.info(f"Dataset:      {cfg.dataset.manifest_dir}  labels={list(cfg.dataset.label_names)}")
+    runlog.info(f"Split sizes:  train={split_sizes.get('train')}  "
+                f"val={split_sizes.get('val')}  test={split_sizes.get('test')}")
+    runlog.info(f"Trainable:    {n_train/1e6:.2f}M / {n_all/1e9:.2f}B  ({100*n_train/n_all:.2f}%)")
+    runlog.info(f"Batch:        {cfg.train.batch_size} × grad_accum {cfg.train.grad_accum}  "
+                f"= effective {effective_bs}")
+    runlog.info(f"LR:           {cfg.train.learning_rate}  "
+                f"warmup_ratio={cfg.train.warmup_ratio}  "
+                f"weight_decay={cfg.train.weight_decay}")
+    runlog.info(f"Epochs:       {cfg.train.epochs}  "
+                f"patience={cfg.train.early_stopping_patience}")
+    runlog.info(f"Seed:         {cfg.seed}")
+    runlog.info(f"Hardware:     {gpu_name}  (device_count={torch.cuda.device_count()})")
+    runlog.info("=" * 70)
 
     # Optimizer + scheduler
     optimizer = AdamW(
