@@ -1,0 +1,36 @@
+# Blackwell (sm_120) environment — for RTX PRO 5000/6000.
+#
+# PyTorch stable does not yet ship sm_120 kernels (as of torch 2.6);
+# we use nightly cu128 build.
+#
+# Install:
+#   conda create -n merits_llama_bw python=3.11 -y
+#   conda activate merits_llama_bw
+#   pip install --pre torch --index-url https://download.pytorch.org/whl/nightly/cu128
+#   pip install -r requirements-blackwell.txt
+#
+# NOTE: torchvision + torchaudio are NOT installed. They pin torch to a matching
+# nightly build which pip cannot always resolve. Our pipeline does not use them.
+
+# LLM + PEFT — same as the 4090 (Ada) env
+transformers==4.46.3
+peft==0.13.2
+accelerate==1.1.1
+
+# QLoRA / 4-bit — optional, only if the Blackwell kernel is available for your nightly.
+# Skip if it errors on install or first import.
+# bitsandbytes==0.44.1
+
+# Data / training
+datasets>=2.20
+soundfile
+librosa
+scikit-learn
+pandas
+tqdm
+pyyaml
+numpy
+
+# Experiment tracking
+wandb
+tensorboard
