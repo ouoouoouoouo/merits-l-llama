@@ -1,0 +1,58 @@
+# Text Stage I — Llama-3.1-8B + LoRA fine-tune on IEMOCAP (4-class).
+#
+# Baseline reference (RoBERTa-large + FC, from merits-l-text):
+#   test wF1 = 0.6904 ± 0.0085 (n=5)
+#
+# This config skips the MSP-PODCAST pretraining stage — we fine-tune Llama
+# directly on IEMOCAP first to see if LoRA reaches parity. If it doesn't,
+# add pretraining and re-fine-tune.
+
+run_name: iemocap_text_llama_stage1
+seed: 42
+output_dir: outputs/iemocap_text_llama_stage1
+
+dataset:
+  # Same IEMOCAP manifests as merits-l-text
+  manifest_dir: data/manifests/iemocap
+  num_labels: 4
+  label_names: [angry, happy, sad, neutral]
+
+model:
+  model_id: meta-llama/Meta-Llama-3.1-8B
+  num_labels: 4
+  # LoRA — r=16 α=32 matches our smoke test that used ~16 GB VRAM.
+  # Increase r=32, α=64 if you have VRAM headroom and want more adaptation capacity.
+  lora_r: 16
+  lora_alpha: 32
+  lora_dropout: 0.1
+  # Which attention projections to LoRA-adapt. q_proj + v_proj is the standard
+  # LoRA paper choice; add k_proj/o_proj for stronger adaptation (more params).
+  target_modules: [q_proj, v_proj]
+  # How to aggregate token hidden states -> utt embedding.
+  #   'mean' -> mean pool over non-pad tokens (comparable to RoBERTa mean pool)
+  #   'last' -> take the last non-pad token (causal-LM natural choice)
+  pool: mean
+  head_dropout: 0.1
+
+train:
+  epochs: 10
+  # With 4090 (24 GB) LoRA we can fit batch 8 + max_len 128.
+  # On Blackwell 5000 (50 GB) LoRA we could push batch 16-24.
+  batch_size: 8
+  eval_batch_size: 16
+  # Effective batch = batch_size * grad_accum
+  grad_accum: 2
+  max_length: 128
+  learning_rate: 5.0e-5
+  weight_decay: 0.01
+  warmup_ratio: 0.06
+  grad_clip: 1.0
+  early_stopping_patience: 3
+  save_best_metric: weighted_f1
+  save_best_split: val
+  num_workers: 2
+
+logging:
+  use_wandb: true
+  wandb_project: merits-l-llama
+  log_every: 20
