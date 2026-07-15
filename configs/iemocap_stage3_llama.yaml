@@ -1,0 +1,51 @@
+# Stage III — Multimodal co-attention fusion, Llama text + WavLM CARE audio.
+#
+# Text  side (upgraded):  Llama-3.1-8B LoRA  → Stage II Bi-GRU  → 2048-d utt hidden
+# Audio side (unchanged): WavLM-base + CARE   → Stage II Bi-GRU  → 256-d utt hidden
+#                                              (reused from merits-l-text)
+#
+# Baseline (RoBERTa + WavLM+CARE, from merits-l-text):
+#   fusion wF1 = 0.8305 ± 0.0138 (n=5), best 0.8504
+
+run_name: iemocap_stage3_llama
+seed: 42
+output_dir: outputs/iemocap_stage3_llama
+
+dataset:
+  manifest_dir: data/manifests/iemocap
+  # Llama Stage II Bi-GRU output = 2 * gru_hidden = 2 * 1024 = 2048
+  text_features_path:  data/cache/iemocap_text_llama_stage2_utt.pt
+  # WavLM CARE Stage II Bi-GRU output = 2 * 128 = 256
+  # Copy from /home/ouo/merits-l-text/data/cache/iemocap_audio_stage2_utt.pt
+  audio_features_path: data/cache/iemocap_audio_stage2_utt.pt
+  num_labels: 4
+  label_names: [angry, happy, sad, neutral]
+
+model:
+  text_dim: 2048           # 2 * Llama Stage II gru_hidden=1024
+  audio_dim: 256           # 2 * WavLM Stage II gru_hidden=128
+  hidden_dim: 256          # common fusion dim
+  num_heads: 8             # 256 / 8 = 32 per head
+  dropout: 0.5
+  num_labels: 4
+
+train:
+  epochs: 100
+  batch_size: 8
+  eval_batch_size: 16
+  learning_rate: 5.0e-5
+  weight_decay: 0.01
+  warmup_ratio: 0.06
+  optimizer: adamw
+  scheduler: linear
+  grad_clip: 1.0
+  fp16: false
+  early_stopping_patience: 20
+  save_best_metric: weighted_f1
+  save_best_split: val
+  num_workers: 2
+
+logging:
+  use_wandb: true
+  wandb_project: merits-l-llama
+  log_every: 10
