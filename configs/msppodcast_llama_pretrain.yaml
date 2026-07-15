@@ -1,0 +1,57 @@
+# MSP-PODCAST Llama pretrain (LLM-supervised, GPT-3.5 pseudo-labels).
+#
+# Mirrors the RoBERTa-FT pretrain in merits-l-text — same 149K MSP-PODCAST utts,
+# same Whisper transcripts, same GPT-3.5 pseudo-labels. Only the encoder changes
+# to Llama-3.1-8B + LoRA.
+#
+# Output: LoRA adapter + classifier head at outputs/msppodcast_llama_pretrain/best/
+# which is then loaded by iemocap_text_llama_stage1_ftpretrain.yaml as
+# `model.resume_from`.
+
+run_name: msppodcast_llama_pretrain
+seed: 42
+output_dir: outputs/msppodcast_llama_pretrain
+
+dataset:
+  # Reuse the same pretrain_splits directory that produced the RoBERTa baseline.
+  # NOTE: MSP-PODCAST GPT-3.5 pseudo-labels are 3-class (approx negative/neutral/positive).
+  # The subsequent IEMOCAP fine-tune is 4-class — our LoRA loader detects the
+  # head mismatch and re-initializes the classifier head automatically, so the
+  # LoRA attention weights transfer while the head learns the new label space.
+  manifest_dir: /home/ouo/merits-l-text/data/manifests/msp_podcast/pretrain_splits
+  num_labels: 3
+  label_names: [negative, neutral, positive]
+
+model:
+  model_id: meta-llama/Meta-Llama-3.1-8B
+  num_labels: 3
+  lora_r: 16
+  lora_alpha: 32
+  lora_dropout: 0.1
+  target_modules: [q_proj, v_proj]
+  pool: mean
+  head_dropout: 0.1
+  # resume_from: null   # fresh pretrain from base Llama
+
+train:
+  # MSP-PODCAST is much larger (149K) than IEMOCAP (3K) — fewer epochs suffice.
+  epochs: 3
+  # LoRA on Blackwell 5000: batch 16, ~30 GB use.
+  batch_size: 16
+  eval_batch_size: 32
+  grad_accum: 2
+  max_length: 128
+  # Lower LR for large-scale pretrain (compared to IEMOCAP fine-tune 5e-5).
+  learning_rate: 2.0e-5
+  weight_decay: 0.01
+  warmup_ratio: 0.03
+  grad_clip: 1.0
+  early_stopping_patience: 2
+  save_best_metric: weighted_f1
+  save_best_split: val
+  num_workers: 2
+
+logging:
+  use_wandb: true
+  wandb_project: merits-l-llama
+  log_every: 100
