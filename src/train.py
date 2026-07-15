@@ -82,6 +82,14 @@ def train(cfg: AttrDict) -> None:
     # Model
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = build_llama_classifier(cfg.model).to(device)
+
+    # Optionally resume LoRA adapter + head from a previous checkpoint (e.g.
+    # MSP-PODCAST pretrain -> IEMOCAP fine-tune).
+    resume_path = cfg.model.get("resume_from", None) if hasattr(cfg.model, "get") else None
+    if resume_path:
+        runlog.info(f"Resuming LoRA + classifier head from {resume_path}")
+        model.load_lora(resume_path, device)
+
     n_train = sum(p.numel() for p in model.parameters() if p.requires_grad)
     n_all = sum(p.numel() for p in model.parameters())
     runlog.info(f"Trainable params: {n_train/1e6:.2f}M / {n_all/1e9:.2f}B  "

@@ -1,0 +1,51 @@
+# Text Stage I — Llama-3.1-8B LoRA, RESUMED from MSP-PODCAST pretrain.
+#
+# Difference vs iemocap_text_llama_stage1.yaml:
+#   - `model.resume_from` points to the pretrain LoRA + head
+#   - Slightly lower LR because we're fine-tuning from a strong init
+#   - Output dir/run_name differ to keep runs separate
+#
+# Expected: Text Stage I wF1 lift from 0.6659 (no pretrain) -> 0.70~0.72 (with pretrain)
+
+run_name: iemocap_text_llama_stage1_ftpretrain
+seed: 42
+output_dir: outputs/iemocap_text_llama_stage1_ftpretrain
+
+dataset:
+  manifest_dir: data/manifests/iemocap
+  num_labels: 4
+  label_names: [angry, happy, sad, neutral]
+
+model:
+  model_id: meta-llama/Meta-Llama-3.1-8B
+  num_labels: 4
+  lora_r: 16
+  lora_alpha: 32
+  lora_dropout: 0.1
+  target_modules: [q_proj, v_proj]
+  pool: mean
+  head_dropout: 0.1
+  # ★ Resume LoRA + head from MSP-PODCAST pretrain checkpoint.
+  # Set to null (or comment out) to fine-tune from scratch instead.
+  resume_from: outputs/msppodcast_llama_pretrain/best
+
+train:
+  epochs: 10
+  batch_size: 8
+  eval_batch_size: 16
+  grad_accum: 2
+  max_length: 128
+  # Lower LR than no-pretrain (5e-5) — we already have a good init.
+  learning_rate: 2.0e-5
+  weight_decay: 0.01
+  warmup_ratio: 0.06
+  grad_clip: 1.0
+  early_stopping_patience: 3
+  save_best_metric: weighted_f1
+  save_best_split: val
+  num_workers: 2
+
+logging:
+  use_wandb: true
+  wandb_project: merits-l-llama
+  log_every: 20

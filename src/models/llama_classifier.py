@@ -101,9 +101,25 @@ class LlamaClassifier(nn.Module):
         )
 
     def load_lora(self, path: str, device: torch.device) -> None:
+        """Load LoRA adapter + head. If the saved head's num_labels differs
+        from the current classifier's, the head is skipped (fresh init) so
+        the same LoRA checkpoint can be reused across tasks with different
+        label spaces.
+        """
         self.base.load_adapter(path, adapter_name="default")
-        head = torch.load(f"{path}/head.pt", map_location=device, weights_only=True)
-        self.classifier.load_state_dict(head["classifier"])
+        head_path = f"{path}/head.pt"
+        try:
+            head = torch.load(head_path, map_location=device, weights_only=True)
+        except FileNotFoundError:
+            print(f"[load_lora] no head.pt under {path}; leaving classifier at fresh init.")
+            return
+        saved_num = int(head.get("num_labels", -1))
+        if saved_num == self.num_labels:
+            self.classifier.load_state_dict(head["classifier"])
+            print(f"[load_lora] loaded LoRA + head ({saved_num}-class) from {path}")
+        else:
+            print(f"[load_lora] loaded LoRA only from {path} "
+                  f"(saved head is {saved_num}-class, current is {self.num_labels}-class -> fresh head)")
 
 
 def build_llama_classifier(cfg) -> LlamaClassifier:
