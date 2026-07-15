@@ -1,0 +1,44 @@
+# Text Stage II — Bi-GRU on Llama features from FT-with-pretrain model.
+#
+# Input: 4096-d Llama features from Stage I fine-tuned with MSP-PODCAST pretrain.
+# Baseline (Llama without pretrain, from iemocap_text_llama_stage2.yaml):
+#   test wF1 = 0.8015
+
+run_name: iemocap_text_llama_stage2_ftpretrain
+seed: 42
+output_dir: outputs/iemocap_text_llama_stage2_ftpretrain
+
+dataset:
+  manifest_dir: data/manifests/iemocap
+  features_path: data/cache/iemocap_llama_ftpretrain_features.pt
+  num_labels: 4
+  label_names: [angry, happy, sad, neutral]
+
+model:
+  input_dim: 4096
+  gru_hidden: 1024
+  gru_layers: 2
+  num_heads: 8
+  dropout: 0.5
+  num_labels: 4
+
+train:
+  epochs: 100
+  batch_size: 8
+  eval_batch_size: 16
+  learning_rate: 5.0e-5
+  weight_decay: 0.01
+  warmup_ratio: 0.06
+  optimizer: adamw
+  scheduler: linear
+  grad_clip: 1.0
+  fp16: false
+  early_stopping_patience: 20
+  save_best_metric: weighted_f1
+  save_best_split: val
+  num_workers: 2
+
+logging:
+  use_wandb: true
+  wandb_project: merits-l-llama
+  log_every: 10
