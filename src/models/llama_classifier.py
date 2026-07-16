@@ -46,9 +46,10 @@ class LlamaClassifier(nn.Module):
         self.num_labels = num_labels
         self.use_lora = use_lora
 
-        # Full FT needs float32 weights so Adam's mixed-precision optimizer
-        # states are numerically stable; LoRA keeps base in fp16 for VRAM.
-        base_dtype = torch.float16 if use_lora else torch.float32
+        # LoRA: fp16 base (only adapters train, base frozen — fp16 is fine).
+        # Full FT: bf16 base — Blackwell has native bf16, no loss-scaling needed,
+        # and fp32 (~165 GB with Adam) does not fit on 102 GB Blackwell 6000.
+        base_dtype = torch.float16 if use_lora else torch.bfloat16
         self.base = AutoModel.from_pretrained(model_id, torch_dtype=base_dtype)
         hidden = self.base.config.hidden_size  # 4096 for Llama-3.1-8B
 

@@ -38,6 +38,7 @@ train:
   save_best_metric: weighted_f1
   save_best_split: val
   num_workers: 2
+  optimizer: adamw8bit
 
 logging:
   use_wandb: true
