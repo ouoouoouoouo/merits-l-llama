@@ -1,0 +1,46 @@
+# MSP-PODCAST Llama full fine-tune pretrain (all 8B params).
+#
+# Requires Blackwell 6000 (102 GB VRAM) — peak use ~80-100 GB with Adam.
+# Use bitsandbytes.AdamW8bit if OOM.
+#
+# Baseline (LoRA):     val wF1 = 0.8872 after 3 epochs
+# Expected (full FT):  val wF1 = 0.90+ (small gain, larger cost)
+
+run_name: msppodcast_llama_pretrain_fullft
+seed: 42
+output_dir: outputs/msppodcast_llama_pretrain_fullft
+
+dataset:
+  manifest_dir: /home/ouo/merits-l-text/data/manifests/msp_podcast/pretrain_splits
+  num_labels: 3
+  label_names: [negative, neutral, positive]
+
+model:
+  model_id: meta-llama/Meta-Llama-3.1-8B
+  num_labels: 3
+  use_lora: false           # ★ FULL FINE-TUNE mode
+  pool: mean
+  head_dropout: 0.1
+
+train:
+  epochs: 3
+  # Batch 2 physical + accum 8 = effective 16 (small, memory tight).
+  # Increase if OOM headroom permits after first epoch.
+  batch_size: 2
+  eval_batch_size: 4
+  grad_accum: 8
+  max_length: 128
+  # Full FT LR must be much lower than LoRA (1e-5 -> 5e-6).
+  learning_rate: 5.0e-6
+  weight_decay: 0.01
+  warmup_ratio: 0.03
+  grad_clip: 1.0
+  early_stopping_patience: 2
+  save_best_metric: weighted_f1
+  save_best_split: val
+  num_workers: 2
+
+logging:
+  use_wandb: true
+  wandb_project: merits-l-llama
+  log_every: 200

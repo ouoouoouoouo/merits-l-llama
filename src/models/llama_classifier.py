@@ -18,12 +18,20 @@ from transformers import AutoModel
 
 
 class LlamaClassifier(nn.Module):
-    """Llama base + LoRA + mean-pool + linear head."""
+    """Llama base + (optional LoRA) + mean-pool + linear head.
+
+    Two modes:
+      * `use_lora=True`  — freeze base, train only q/v LoRA adapters + head.
+                           ~7M trainable, fits 4090 / Blackwell 5000.
+      * `use_lora=False` — full fine-tune all 8B params + head.
+                           ~80-100 GB VRAM with Adam, requires Blackwell 6000.
+    """
 
     def __init__(
         self,
         model_id: str = "meta-llama/Meta-Llama-3.1-8B",
         num_labels: int = 4,
+        use_lora: bool = True,
         lora_r: int = 16,
         lora_alpha: int = 32,
         lora_dropout: float = 0.1,
@@ -36,19 +44,25 @@ class LlamaClassifier(nn.Module):
             raise ValueError(f"pool must be 'mean' or 'last', got {pool!r}")
         self.pool = pool
         self.num_labels = num_labels
+        self.use_lora = use_lora
 
-        self.base = AutoModel.from_pretrained(model_id, torch_dtype=torch.float16)
+        # Full FT needs float32 weights so Adam's mixed-precision optimizer
+        # states are numerically stable; LoRA keeps base in fp16 for VRAM.
+        base_dtype = torch.float16 if use_lora else torch.float32
+        self.base = AutoModel.from_pretrained(model_id, torch_dtype=base_dtype)
         hidden = self.base.config.hidden_size  # 4096 for Llama-3.1-8B
 
-        lora = LoraConfig(
-            r=lora_r,
-            lora_alpha=lora_alpha,
-            target_modules=target_modules or ["q_proj", "v_proj"],
-            lora_dropout=lora_dropout,
-            bias="none",
-            task_type="FEATURE_EXTRACTION",
-        )
-        self.base = get_peft_model(self.base, lora)
+        if use_lora:
+            lora = LoraConfig(
+                r=lora_r,
+                lora_alpha=lora_alpha,
+                target_modules=target_modules or ["q_proj", "v_proj"],
+                lora_dropout=lora_dropout,
+                bias="none",
+                task_type="FEATURE_EXTRACTION",
+            )
+            self.base = get_peft_model(self.base, lora)
+        # If not use_lora, all base params train by default (nn.Parameter.requires_grad=True)
 
         # Classification head — kept in fp32 for numerical stability.
         self.dropout = nn.Dropout(head_dropout)
@@ -92,11 +106,16 @@ class LlamaClassifier(nn.Module):
         return out
 
     def save_lora(self, path: str) -> None:
-        """Save the LoRA adapter + classification head only (not full model)."""
+        """Save either the LoRA adapter (small) or the full base model.
+
+        For LoRA runs, saves the adapter (~30 MB) + head. For full FT runs,
+        saves the whole base (~16 GB for Llama-8B) + head.
+        """
         self.base.save_pretrained(path)
         torch.save(
             {"classifier": self.classifier.state_dict(),
-             "num_labels": self.num_labels, "pool": self.pool},
+             "num_labels": self.num_labels, "pool": self.pool,
+             "use_lora": self.use_lora},
             f"{path}/head.pt",
         )
 
@@ -123,13 +142,15 @@ class LlamaClassifier(nn.Module):
 
 
 def build_llama_classifier(cfg) -> LlamaClassifier:
+    _get = cfg.get if hasattr(cfg, "get") else lambda k, d=None: d
     return LlamaClassifier(
         model_id=str(cfg.model_id),
         num_labels=int(cfg.num_labels),
-        lora_r=int(cfg.get("lora_r", 16)) if hasattr(cfg, "get") else 16,
-        lora_alpha=int(cfg.get("lora_alpha", 32)) if hasattr(cfg, "get") else 32,
-        lora_dropout=float(cfg.get("lora_dropout", 0.1)) if hasattr(cfg, "get") else 0.1,
-        target_modules=list(cfg.get("target_modules", ["q_proj", "v_proj"])) if hasattr(cfg, "get") else ["q_proj", "v_proj"],
-        pool=str(cfg.get("pool", "mean")) if hasattr(cfg, "get") else "mean",
-        head_dropout=float(cfg.get("head_dropout", 0.1)) if hasattr(cfg, "get") else 0.1,
+        use_lora=bool(_get("use_lora", True)),
+        lora_r=int(_get("lora_r", 16)),
+        lora_alpha=int(_get("lora_alpha", 32)),
+        lora_dropout=float(_get("lora_dropout", 0.1)),
+        target_modules=list(_get("target_modules", ["q_proj", "v_proj"])),
+        pool=str(_get("pool", "mean")),
+        head_dropout=float(_get("head_dropout", 0.1)),
     )
