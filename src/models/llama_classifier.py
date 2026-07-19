@@ -63,7 +63,9 @@ class LlamaClassifier(nn.Module):
                 task_type="FEATURE_EXTRACTION",
             )
             self.base = get_peft_model(self.base, lora)
-        # If not use_lora, all base params train by default (nn.Parameter.requires_grad=True)
+        # If not use_lora, all base params train by default. Gradient checkpointing
+        # was tried but not needed on Blackwell 6000 (bf16 + AdamW8bit peaks ~75%
+        # of the 97 GB VRAM with batch=2, seq=128).
 
         # Classification head — kept in fp32 for numerical stability.
         self.dropout = nn.Dropout(head_dropout)
@@ -121,25 +123,52 @@ class LlamaClassifier(nn.Module):
         )
 
     def load_lora(self, path: str, device: torch.device) -> None:
-        """Load LoRA adapter + head. If the saved head's num_labels differs
-        from the current classifier's, the head is skipped (fresh init) so
-        the same LoRA checkpoint can be reused across tasks with different
-        label spaces.
+        """Load LoRA adapter OR full base weights + head.
+
+        Auto-detects whether ``path`` contains a LoRA adapter (adapter_model.*)
+        or a full model dump (model.safetensors / pytorch_model.bin). Head
+        num_labels mismatch is handled by falling back to fresh init.
         """
-        self.base.load_adapter(path, adapter_name="default")
-        head_path = f"{path}/head.pt"
-        try:
-            head = torch.load(head_path, map_location=device, weights_only=True)
-        except FileNotFoundError:
+        from pathlib import Path as _P
+        p = _P(path)
+        has_adapter = any((p / f).exists() for f in (
+            "adapter_config.json", "adapter_model.safetensors", "adapter_model.bin"
+        ))
+        has_full = any((p / f).exists() for f in (
+            "model.safetensors", "pytorch_model.bin",
+            "model.safetensors.index.json", "pytorch_model.bin.index.json",
+        ))
+
+        if has_adapter:
+            self.base.load_adapter(path, adapter_name="default")
+            print(f"[load_lora] loaded LoRA adapter from {path}")
+        elif has_full:
+            # Full base checkpoint (from a use_lora=False run).
+            from transformers import AutoModel
+            print(f"[load_lora] loading full base weights from {path} ...")
+            loaded = AutoModel.from_pretrained(path, torch_dtype=self.base.dtype)
+            self.base.load_state_dict(loaded.state_dict(), strict=False)
+            del loaded
+            torch.cuda.empty_cache()
+            print(f"[load_lora] loaded full base from {path}")
+        else:
+            raise FileNotFoundError(
+                f"No adapter_* or model.* files found under {path}. "
+                f"Directory contents: {sorted(x.name for x in p.iterdir())[:10]}"
+            )
+
+        head_path = p / "head.pt"
+        if not head_path.exists():
             print(f"[load_lora] no head.pt under {path}; leaving classifier at fresh init.")
             return
+        head = torch.load(str(head_path), map_location=device, weights_only=True)
         saved_num = int(head.get("num_labels", -1))
         if saved_num == self.num_labels:
             self.classifier.load_state_dict(head["classifier"])
-            print(f"[load_lora] loaded LoRA + head ({saved_num}-class) from {path}")
+            print(f"[load_lora] loaded head ({saved_num}-class) from {path}")
         else:
-            print(f"[load_lora] loaded LoRA only from {path} "
-                  f"(saved head is {saved_num}-class, current is {self.num_labels}-class -> fresh head)")
+            print(f"[load_lora] head mismatch (saved {saved_num}-class, current "
+                  f"{self.num_labels}-class) -> fresh head")
 
 
 def build_llama_classifier(cfg) -> LlamaClassifier:
