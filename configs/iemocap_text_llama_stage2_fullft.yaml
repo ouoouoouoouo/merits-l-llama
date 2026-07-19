@@ -1,0 +1,42 @@
+# Text Stage II — Bi-GRU on Llama features from FULL FT model.
+#
+# Baseline (Llama LoRA + pretrain, 5-seed):  0.7395 val best  →  Stage III mean 0.8550
+
+run_name: iemocap_text_llama_stage2_fullft
+seed: 42
+output_dir: outputs/iemocap_text_llama_stage2_fullft
+
+dataset:
+  manifest_dir: data/manifests/iemocap
+  features_path: data/cache/iemocap_llama_fullft_features.pt
+  num_labels: 4
+  label_names: [angry, happy, sad, neutral]
+
+model:
+  input_dim: 4096
+  gru_hidden: 1024
+  gru_layers: 2
+  num_heads: 8
+  dropout: 0.5
+  num_labels: 4
+
+train:
+  epochs: 100
+  batch_size: 8
+  eval_batch_size: 16
+  learning_rate: 5.0e-5
+  weight_decay: 0.01
+  warmup_ratio: 0.06
+  optimizer: adamw
+  scheduler: linear
+  grad_clip: 1.0
+  fp16: false
+  early_stopping_patience: 20
+  save_best_metric: weighted_f1
+  save_best_split: val
+  num_workers: 2
+
+logging:
+  use_wandb: true
+  wandb_project: merits-l-llama
+  log_every: 10
