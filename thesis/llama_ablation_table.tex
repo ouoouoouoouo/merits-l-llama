@@ -1,0 +1,48 @@
+% ============================================================================
+%  Llama-3.1-8B ablation on IEMOCAP (4-class, session split).
+%
+%  "MSP pretrain"      = LoRA (or full FT) on MSP-PODCAST 149K utts with
+%                        GPT-3.5 pseudo-labels (3-class), before touching IEMOCAP.
+%  "IEMOCAP FT"        = LoRA (or full FT) on IEMOCAP train.csv (3205 utts,
+%                        4-class), which produces the Text Stage I model.
+%  "Audio"             = WavLM-base + CARE (default) or Vanilla WavLM-base
+%                        (ablation showing CARE's specific contribution).
+%
+%  Text I / Text II are single-seed (seed 42) test wF1.
+%  Fusion mean ± std computed over 5 random seeds on Stage III co-attention.
+% ============================================================================
+
+\begin{table}[t]
+\caption{Llama-3.1-8B text-branch ablation on IEMOCAP multimodal SER.
+         ``MSP pretrain'' denotes MSP-PODCAST 3-class training on 149K
+         utterances with GPT-3.5 pseudo-labels; all rows subsequently fine-tune
+         on IEMOCAP 4-class. Text Stage I/II report seed 42; Stage III fusion
+         reports mean $\pm$ std and best-of-5 over 5 random seeds. Unless noted,
+         the audio branch is WavLM-base + CARE. The final row uses vanilla
+         WavLM-base (no CARE pretrain) to isolate CARE's contribution.
+         The final column compares our best-of-5 fusion to the paper's single
+         reported value (0.8648).}
+\label{tab:llama_ablation}
+\centering
+\setlength{\tabcolsep}{4pt}
+\small
+\begin{tabular}{llccccccc}
+\toprule
+Text encoder                & Audio         & MSP pretrain   & IEMOCAP FT & Text I            & Text II           & Fusion mean $\pm$ std              & Fusion best              & Best vs paper       \\
+\midrule
+RoBERTa-large (baseline)    & CARE          & Full FT        & Full FT    & 0.6935            & 0.8241            & 0.8305 $\pm$ 0.0138                & 0.8504                   & $-1.44\%$           \\
+\textbf{Llama-3.1-8B}~\ding{72} & CARE      & \textit{none}  & LoRA       & 0.6659            & 0.8015            & \textbf{0.8567 $\pm$ 0.0139}       & \textbf{0.8746}~\ding{72}& $\mathbf{+0.98\%}$  \\
+Llama-3.1-8B                & CARE          & LoRA           & LoRA       & 0.7038            & 0.7956            & 0.8550 $\pm$ 0.0072                & 0.8640                   & $-0.08\%$           \\
+Llama-3.1-8B                & CARE          & Full FT        & Full FT    & 0.7230~$\uparrow$ & 0.8178~$\uparrow$ & 0.8294 $\pm$ 0.0137~$\downarrow$   & 0.8529                   & $-1.19\%$           \\
+\midrule
+Llama-3.1-8B                & Vanilla WavLM & \textit{none}  & LoRA       & 0.6659            & 0.8015            & 0.8504 $\pm$ 0.0075                & 0.8577                   & $-0.71\%$           \\
+\bottomrule
+\end{tabular}
+
+\vspace{2pt}
+\footnotesize
+\ding{72} Best overall fusion.
+$\uparrow$/$\downarrow$ vs.\ the starred Llama LoRA (no pretrain, with CARE) row.
+The final row swaps CARE for vanilla WavLM-base: the $-0.63\%$ mean drop
+($-1.69\%$ best) isolates the specific contribution of the CARE audio pretraining.
+\end{table}
