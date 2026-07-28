@@ -1,0 +1,54 @@
+% ============================================================================
+%  Complete experimental matrix on IEMOCAP Stage III fusion.
+%
+%  Columns:
+%    # | Text Encoder | Audio | MSP FT | IEMOCAP FT | Text I | Text II
+%      | Fusion mean±std | Fusion best | Best vs paper
+%
+%  Text I / Text II are single-seed (seed 42) test wF1.
+%  Fusion III mean±std / best over 5 random seeds.
+%  Text pipeline is shared within groups (rows 1-2 share text; rows 3-4 share text).
+% ============================================================================
+
+\begin{table*}[t]
+\caption{Complete experimental matrix on IEMOCAP Stage III multimodal fusion
+         (4-class, session split). Text Stage I/II report seed 42; Stage III
+         reports mean $\pm$ std over 5 random seeds and best-of-5.
+         ``Best vs paper'' compares our best-of-5 to the paper's single
+         reported value (0.8648). All rows use identical Bi-GRU + attention
+         Stage II modules and co-attention Stage III fusion architecture.}
+\label{tab:full_experiments}
+\centering
+\small
+\setlength{\tabcolsep}{4pt}
+\begin{tabular}{c l l l l cc cc c}
+\toprule
+\textbf{\#}
+    & \textbf{Text Encoder}
+    & \textbf{Audio}
+    & \textbf{MSP FT}
+    & \textbf{IEMOCAP FT}
+    & \textbf{Text I}
+    & \textbf{Text II}
+    & \textbf{Fusion mean $\pm$ std}
+    & \textbf{Fusion best}
+    & \textbf{Best vs paper} \\
+\midrule
+1 & RoBERTa-large   & CARE          & Full FT       & Full FT  & 0.6935 & 0.8241 & 0.8305 $\pm$ 0.0138            & 0.8504                   & $-1.44\%$         \\
+2 & RoBERTa-large   & Vanilla WavLM & Full FT       & Full FT  & 0.6935 & 0.8241 & 0.8304 $\pm$ 0.0094            & 0.8409                   & $-2.39\%$         \\
+\midrule
+3 & \textbf{Llama-3.1-8B}~\ding{72} & CARE      & \textit{none} & LoRA     & 0.6659 & 0.8015 & \textbf{0.8567 $\pm$ 0.0139}   & \textbf{0.8746}~\ding{72}& $\mathbf{+0.98\%}$\\
+4 & Llama-3.1-8B    & Vanilla WavLM & \textit{none} & LoRA     & 0.6659 & 0.8015 & 0.8504 $\pm$ 0.0075            & 0.8577                   & $-0.71\%$         \\
+5 & Llama-3.1-8B    & CARE          & LoRA          & LoRA     & 0.7038 & 0.7956 & 0.8550 $\pm$ 0.0072            & 0.8640                   & $-0.08\%$         \\
+6 & Llama-3.1-8B    & CARE          & Full FT       & LoRA     & 0.6895 & 0.8028 & 0.8526 $\pm$ 0.0102            & 0.8645                   & $-0.03\%$         \\
+7 & Llama-3.1-8B    & CARE          & Full FT       & Full FT  & 0.7230 & 0.8178 & 0.8294 $\pm$ 0.0137            & 0.8529                   & $-1.19\%$         \\
+\bottomrule
+\end{tabular}
+
+\vspace{4pt}
+\footnotesize
+\ding{72} Best overall fusion.
+Paper reference (single seed): 0.8648.
+Rows 1-2 share the same RoBERTa text pipeline (only Stage III audio differs);
+rows 3-4 similarly share the vanilla-Llama text pipeline.
+\end{table*}
