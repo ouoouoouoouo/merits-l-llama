@@ -1,0 +1,52 @@
+# IEMOCAP Text Stage I — Llama Full-FT pretrain (MSP) + LoRA fine-tune (IEMOCAP)
+#
+# Isolates: does MSP-PODCAST pretrain help IEMOCAP downstream when the
+# downstream FT is only LoRA (parameter-efficient)?
+#
+# vs baselines:
+#   Llama LoRA (no pretrain) + CARE:  fusion 0.8567 ± 0.0139  best 0.8746
+#   Llama LoRA + LoRA pretrain + CARE: fusion 0.8550 ± 0.0072  best 0.8640
+#   Llama Full FT + Full FT + CARE:    fusion 0.8294 ± 0.0137  best 0.8529
+
+run_name: iemocap_text_llama_stage1_fullpretrain_lorafit
+seed: 42
+output_dir: outputs/iemocap_text_llama_stage1_fullpretrain_lorafit
+
+dataset:
+  manifest_dir: data/manifests/iemocap
+  num_labels: 4
+  label_names: [angry, happy, sad, neutral]
+
+model:
+  model_id: meta-llama/Meta-Llama-3.1-8B         # tokenizer source
+  # ★ Load base weights from Full-FT MSP-PODCAST pretrain checkpoint
+  pretrain_base: outputs/msppodcast_llama_pretrain_fullft/best
+  num_labels: 4
+  # ★ LoRA on IEMOCAP (efficient downstream FT)
+  use_lora: true
+  lora_r: 16
+  lora_alpha: 32
+  lora_dropout: 0.1
+  target_modules: [q_proj, v_proj]
+  pool: mean
+  head_dropout: 0.1
+
+train:
+  epochs: 10
+  batch_size: 8
+  eval_batch_size: 16
+  grad_accum: 2
+  max_length: 128
+  learning_rate: 5.0e-5    # LoRA LR (5e-5, same as no-pretrain LoRA)
+  weight_decay: 0.01
+  warmup_ratio: 0.06
+  grad_clip: 1.0
+  early_stopping_patience: 3
+  save_best_metric: weighted_f1
+  save_best_split: val
+  num_workers: 2
+
+logging:
+  use_wandb: true
+  wandb_project: merits-l-llama
+  log_every: 20

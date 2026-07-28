@@ -38,6 +38,7 @@ class LlamaClassifier(nn.Module):
         target_modules: Optional[List[str]] = None,
         pool: str = "mean",
         head_dropout: float = 0.1,
+        pretrain_base: Optional[str] = None,
     ) -> None:
         super().__init__()
         if pool not in ("mean", "last"):
@@ -50,7 +51,14 @@ class LlamaClassifier(nn.Module):
         # Full FT: bf16 base — Blackwell has native bf16, no loss-scaling needed,
         # and fp32 (~165 GB with Adam) does not fit on 102 GB Blackwell 6000.
         base_dtype = torch.float16 if use_lora else torch.bfloat16
-        self.base = AutoModel.from_pretrained(model_id, torch_dtype=base_dtype)
+        # `pretrain_base` lets us load base weights from a full-FT pretrained
+        # checkpoint (e.g. MSP-PODCAST full FT output) BEFORE wrapping with LoRA.
+        # This decouples pretrain strength from downstream FT strength:
+        # e.g. Full FT on MSP-PODCAST + LoRA on IEMOCAP.
+        base_load_path = pretrain_base if pretrain_base else model_id
+        self.base = AutoModel.from_pretrained(base_load_path, torch_dtype=base_dtype)
+        if pretrain_base:
+            print(f"[LlamaClassifier] loaded pretrained base weights from {pretrain_base}")
         hidden = self.base.config.hidden_size  # 4096 for Llama-3.1-8B
 
         if use_lora:
@@ -173,6 +181,7 @@ class LlamaClassifier(nn.Module):
 
 def build_llama_classifier(cfg) -> LlamaClassifier:
     _get = cfg.get if hasattr(cfg, "get") else lambda k, d=None: d
+    pretrain_base = _get("pretrain_base", None)
     return LlamaClassifier(
         model_id=str(cfg.model_id),
         num_labels=int(cfg.num_labels),
@@ -183,4 +192,5 @@ def build_llama_classifier(cfg) -> LlamaClassifier:
         target_modules=list(_get("target_modules", ["q_proj", "v_proj"])),
         pool=str(_get("pool", "mean")),
         head_dropout=float(_get("head_dropout", 0.1)),
+        pretrain_base=str(pretrain_base) if pretrain_base else None,
     )
