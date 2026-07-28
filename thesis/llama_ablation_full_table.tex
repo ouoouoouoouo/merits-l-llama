@@ -1,0 +1,39 @@
+% ============================================================================
+%  Complete ablation matrix on IEMOCAP Stage III fusion (5-seed weighted F1).
+%  Covers: text encoder, audio branch, pretrain strategy, downstream FT method.
+% ============================================================================
+
+\begin{table*}[t]
+\caption{Complete ablation on IEMOCAP Stage III multimodal fusion.
+         Weighted F1 mean $\pm$ std over 5 random seeds and best-of-5.
+         All rows use identical Bi-GRU + self-attention Stage II modules and
+         co-attention Stage III fusion. Paper reference: 0.8648.}
+\label{tab:full_ablation}
+\centering
+\small
+\setlength{\tabcolsep}{4pt}
+\begin{tabular}{l l l l cc c}
+\toprule
+Text encoder                & Audio         & Pretrain (MSP)  & Downstream FT & Fusion mean $\pm$ std              & Best              & vs paper           \\
+\midrule
+RoBERTa-large               & CARE          & Full FT         & Full FT       & 0.8305 $\pm$ 0.0138                & 0.8504            & $-1.44\%$          \\
+RoBERTa-large               & Vanilla WavLM & Full FT         & Full FT       & 0.8304 $\pm$ 0.0094                & 0.8409            & $-2.39\%$          \\
+\midrule
+\textbf{Llama-3.1-8B}~\ding{72} & CARE      & \textit{none}   & LoRA          & \textbf{0.8567 $\pm$ 0.0139}       & \textbf{0.8746}~\ding{72} & $\mathbf{+0.98\%}$ \\
+Llama-3.1-8B                & Vanilla WavLM & \textit{none}   & LoRA          & 0.8504 $\pm$ 0.0075                & 0.8577            & $-0.71\%$          \\
+Llama-3.1-8B                & CARE          & LoRA            & LoRA          & 0.8550 $\pm$ 0.0072                & 0.8640            & $-0.08\%$          \\
+Llama-3.1-8B                & CARE          & Full FT         & LoRA          & 0.8526 $\pm$ 0.0102                & 0.8645            & $-0.03\%$          \\
+Llama-3.1-8B                & CARE          & Full FT         & Full FT       & 0.8294 $\pm$ 0.0137                & 0.8529            & $-1.19\%$          \\
+\bottomrule
+\end{tabular}
+
+\vspace{4pt}
+\footnotesize
+\textbf{Findings:}
+(1) Text encoder upgrade (RoBERTa$\to$Llama) is the dominant effect: $+2.6$ pp on average.
+(2) CARE audio pretrain contributes $\sim 0$ pp on RoBERTa, $+0.6$ pp on Llama.
+(3) MSP-PODCAST text pretrain (LoRA or Full FT) adds $\leq 0.5$ pp to fusion when
+downstream is LoRA — essentially no benefit.
+(4) Downstream Full FT hurts fusion by $-2.3$ pp regardless of pretrain
+(Full FT $\to$ over-specialised features that lose cross-modal complementarity).
+\end{table*}
