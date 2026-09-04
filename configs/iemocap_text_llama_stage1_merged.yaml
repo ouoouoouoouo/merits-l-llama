@@ -1,0 +1,60 @@
+# Feature extraction with a MERGED LoRA adapter (task arithmetic).
+#
+# Identical to iemocap_text_llama_stage1.yaml except for the rank: merging two
+# adapters by concatenation doubles r (16 -> 32) and alpha with it (32 -> 64),
+# so that scaling = alpha/r is unchanged. build_llama_classifier instantiates
+# the adapter before the weights are loaded, so these must match the merged
+# adapter or loading fails on a shape mismatch.
+#
+# Only used by scripts/extract_text_features_llama.py — nothing is trained with
+# this config.
+#
+#   python -m scripts.merge_lora_adapters \
+#       --adapter-a outputs/iemocap_text_llama_stage1/best \
+#       --adapter-b outputs/msppodcast_llama_pretrain/best \
+#       --lam 0.3 --out outputs/merged/iem_msp_lam03
+#
+#   python -m scripts.extract_text_features_llama \
+#       --config configs/iemocap_text_llama_stage1_merged.yaml \
+#       --lora-ckpt outputs/merged/iem_msp_lam03 \
+#       --out-pt data/cache/iemocap_llama_features_lam03.pt
+
+run_name: iemocap_text_llama_stage1_merged
+seed: 42
+output_dir: outputs/iemocap_text_llama_stage1_merged
+
+dataset:
+  manifest_dir: data/manifests/iemocap
+  num_labels: 4
+  label_names: [angry, happy, sad, neutral]
+
+model:
+  model_id: meta-llama/Meta-Llama-3.1-8B
+  num_labels: 4
+  lora_r: 32               # 2 x 16, set by the concatenation merge
+  lora_alpha: 64           # 2 x 32, keeps scaling = alpha/r at 2.0
+  lora_dropout: 0.1
+  target_modules: [q_proj, v_proj]
+  pool: mean
+  head_dropout: 0.1
+
+train:
+  # Unused for extraction; max_length is the one field the extractor reads.
+  epochs: 1
+  batch_size: 8
+  eval_batch_size: 16
+  grad_accum: 2
+  max_length: 128
+  learning_rate: 5.0e-5
+  weight_decay: 0.01
+  warmup_ratio: 0.06
+  grad_clip: 1.0
+  early_stopping_patience: 3
+  save_best_metric: weighted_f1
+  save_best_split: val
+  num_workers: 2
+
+logging:
+  use_wandb: false
+  wandb_project: merits-l-llama
+  log_every: 100
