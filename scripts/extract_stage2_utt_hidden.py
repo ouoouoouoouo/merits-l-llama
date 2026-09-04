@@ -10,10 +10,19 @@ Usage:
         --config configs/iemocap_text_llama_stage2.yaml \
         --stage2-ckpt outputs/iemocap_text_llama_stage2/best/stage2.pt \
         --out-pt data/cache/iemocap_text_llama_stage2_utt.pt
+
+    # Sweeping the Stage I features (e.g. merged LoRA adapters): the input file
+    # is a config field, not a flag, so it has to come through --override.
+    python -m scripts.extract_stage2_utt_hidden \
+        --config configs/iemocap_text_llama_stage2.yaml \
+        --stage2-ckpt outputs/stage2_lam0.3/best/stage2.pt \
+        --override dataset.features_path=data/cache/iemocap_llama_features_lam0.3.pt \
+        --out-pt data/cache/text_stage2_utt_lam0.3.pt
 """
 from __future__ import annotations
 
 import argparse
+import json
 from pathlib import Path
 from typing import Dict
 
@@ -33,9 +42,26 @@ def main() -> None:
                         help="Path to Stage II best/stage2.pt")
     parser.add_argument("--out-pt", required=True, type=str)
     parser.add_argument("--device", default="cuda", choices=["cuda", "cpu"])
+    parser.add_argument("--override", nargs="*", default=[],
+                        help="dotted.key=json_value, as in src/train_*.py. Needed "
+                             "because the input features come from the config, so a "
+                             "sweep over feature files (e.g. merged LoRA adapters at "
+                             "several lambdas) cannot be expressed with flags alone.")
     args = parser.parse_args()
 
     cfg = load_config(args.config)
+    for ov in args.override:
+        key, _, val = ov.partition("=")
+        keys = key.split(".")
+        node = cfg
+        for k in keys[:-1]:
+            node = node[k]
+        try:
+            parsed = json.loads(val)
+        except json.JSONDecodeError:
+            parsed = val
+        node[keys[-1]] = parsed
+    print(f"features_path: {cfg.dataset.features_path}")
     device = torch.device(args.device if torch.cuda.is_available() else "cpu")
 
     loaders = build_dialogue_loaders(
