@@ -1,0 +1,75 @@
+# Text Stage I — Llama-3.1-8B + LoRA + GEmo-CLAP-style KL cross-modal alignment.
+#
+# Same recipe as configs/iemocap_text_llama_stage1.yaml, plus
+#     L = CE + lambda_kl * KL_contrastive(llama_utt_emb, care_audio_emb, label)
+# so the Stage I text embedding is pulled towards the audio embedding of the
+# same utterance (and towards same-emotion utterances in the batch).
+#
+# Run with:
+#   python -m src.train_kl --config configs/iemocap_text_llama_stage1_kl.yaml
+#
+# Ablation over lambda:
+#   for L in 0 0.1 0.3 0.5 1.0; do
+#     python -m src.train_kl --config configs/iemocap_text_llama_stage1_kl.yaml \
+#       --override train.lambda_kl=$L output_dir=outputs/stage1_kl_lam$L \
+#                  run_name=stage1_kl_lam$L
+#   done
+# (lambda_kl=0 is exactly the plain Stage I baseline.)
+
+run_name: iemocap_text_llama_stage1_kl
+seed: 42
+output_dir: outputs/iemocap_text_llama_stage1_kl
+
+dataset:
+  manifest_dir: data/manifests/iemocap
+  num_labels: 4
+  label_names: [angry, happy, sad, neutral]
+  # {utt_id: audio embedding} .pt — any per-utterance audio vector works.
+  # Default reuses the 256-d WavLM+CARE Stage II hiddens already copied from
+  # merits-l-text for Stage III, so no extra extraction is needed.
+  # Utterances missing from this file simply sit out of the contrastive term.
+  audio_emb_path: data/cache/iemocap_audio_stage2_utt.pt
+
+model:
+  model_id: meta-llama/Meta-Llama-3.1-8B
+  num_labels: 4
+  lora_r: 16
+  lora_alpha: 32
+  lora_dropout: 0.1
+  target_modules: [q_proj, v_proj]
+  pool: mean
+  head_dropout: 0.1
+
+train:
+  epochs: 10
+  # The contrastive term is computed in-batch, so the batch size sets how many
+  # negatives each utterance sees. Push batch_size as high as VRAM allows
+  # (grad_accum does NOT help here — it only averages gradients across steps).
+  batch_size: 8
+  eval_batch_size: 16
+  grad_accum: 2
+  max_length: 128
+  learning_rate: 5.0e-5
+  weight_decay: 0.01
+  warmup_ratio: 0.06
+  grad_clip: 1.0
+  early_stopping_patience: 3
+  save_best_metric: weighted_f1
+  save_best_split: val
+  num_workers: 2
+
+  # ---- KL cross-modal alignment ----
+  # 0 disables the term entirely (falls back to the plain CE baseline).
+  lambda_kl: 0.5
+  # Shared space the two modalities are projected into before the cosine
+  # similarity matrix. 256 matches the audio embedding dim.
+  kl_proj_dim: 256
+  kl_proj_dropout: 0.0
+  # The projections + temperatures are randomly initialised, so they tolerate
+  # (and usually want) a larger LR than the LoRA adapters.
+  kl_lr: 1.0e-4
+
+logging:
+  use_wandb: true
+  wandb_project: merits-l-llama
+  log_every: 20

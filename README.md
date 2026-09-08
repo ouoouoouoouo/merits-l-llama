@@ -93,6 +93,41 @@ Available variants:
 * MSP-Podcast-pretrained LoRA fine-tuning
 * Full-parameter fine-tuning
 
+#### Optional: cross-modal KL alignment
+
+`src/train_kl.py` adds a GEmo-CLAP-style KL contrastive term to Stage I, so the
+text embedding is aligned with the audio embedding of the same utterance while
+the classifier is being trained:
+
+```text
+L = CE(logits, y) + lambda_kl * KL_contrastive(llama_utterance_embedding,
+                                              care_audio_embedding, y)
+```
+
+The two modalities are projected into a shared 256-dimensional space, L2-normalized,
+and compared with a temperature-scaled cosine similarity matrix. The target is the
+emotion agreement matrix `M_e[i, j] = 1` if `label(i) == label(j)`, so every
+same-emotion pair in the batch counts as a positive, not only the diagonal.
+
+The audio side reuses the existing `data/cache/iemocap_audio_stage2_utt.pt` file,
+so no additional extraction step is required. Utterances missing from that file
+are excluded from the contrastive term but still contribute to the cross-entropy
+term.
+
+```bash
+python -m src.train_kl \
+    --config configs/iemocap_text_llama_stage1_kl.yaml
+```
+
+`train.lambda_kl: 0` disables the term and reproduces plain Stage I training, which
+gives the no-alignment row of the ablation. Because the contrastive term uses
+in-batch negatives, `train.batch_size` should be as large as the GPU allows;
+`grad_accum` does not increase the number of negatives.
+
+Downstream stages are unchanged. Feature extraction still reads the pooled
+4096-dimensional representation, and the projection heads are used for training
+only, saved as `best/kl_criterion.pt` for reproducibility.
+
 ### Stage II: dialogue-context modeling
 
 Stage II takes the precomputed 4096-dimensional Llama representation of each utterance and applies:
@@ -135,6 +170,7 @@ The audio Stage II hidden features must currently be generated or copied from `m
 merits-l-llama/
 ├── configs/
 │   ├── iemocap_text_llama_stage1.yaml
+│   ├── iemocap_text_llama_stage1_kl.yaml
 │   ├── iemocap_text_llama_stage1_ftpretrain.yaml
 │   ├── iemocap_text_llama_stage1_fullft.yaml
 │   ├── iemocap_text_llama_stage2.yaml
@@ -153,6 +189,7 @@ merits-l-llama/
 │   ├── models/
 │   ├── utils/
 │   ├── train.py
+│   ├── train_kl.py
 │   ├── train_stage2.py
 │   └── train_stage3.py
 ├── requirements.txt
